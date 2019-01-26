@@ -41,108 +41,183 @@ def  getAggregateData(aggregate):
 	index=aggregate.find("(")
 	return (aggregate[:index],aggregate[index+1:len(aggregate)-1])
 
+def handleWhere():
+	# clause :=  clause and clause
+	# clause :=  clause or clause
+	# clause := name operator value
+	# operator := = | <> | < | <= | > | >=
+
+	print(whereClause)
+	a=re.search("WHERE (.*) (AND|OR) (.*)",whereClause)
+	clause1=None
+	clause2=None
+	logic=None
+	if a:
+		clause1=a.group(1).strip()
+		logic=a.group(2).strip()
+		clause2=a.group(3).strip()
+	else:
+		a=re.search("WHERE (.*)",whereClause)
+		clause1=a.group(1).strip()
+	# print(clause1,logic,clause2)
+	if clause1==None and clause2==None and logic==None:
+		return printError("Error in where clause")
+	if logic==None:
+		#only one clause
+		a=re.search("(.*)(<|>|>=|<=|=)(.*)",clause1)
+		clause1=(a.group(1),a.group(2),a.group(3))
+	else:
+		#and or present
+		a=re.search("(.*)(<|>|>=|<=|=)(.*)",clause1)
+		b=re.search("(.*)(<|>|>=|<=|=)(.*)",clause2)
+		clause1=(a.group(1),a.group(2),a.group(3))
+		clause2=(b.group(1),b.group(2),b.group(3))
+
+	print(clause1)
+	print(logic)
+	print(clause2)
+
+def product(table1,table2):
+
+	table1keys=list(table1.keys())
+	table2keys=list(table2.keys())
+	table1Size=len(table1[table1keys[0]])
+	table2Size=len(table2[table2keys[0]])
+	if table1Size==0 or table2Size==0:
+		return printError("Cannot join tables: One of the table is empty")
+	for key in table1keys:
+		table1[key]=table1[key]*table2Size
+	for key in table2keys:
+		table1[key]=[item for item in table2[key] for i in range(table1Size)]
+	return table1
+
+
+def crossProduct():
+	for i,tableName in enumerate(tables):
+		if i==0:
+			table1=tableData[tableName]
+			continue
+		table2=tableData[tableName]
+		table1=product(table1,table2)
+	return table1
+	
+
+def showDistinct(tableName):
+	length=len(tableData[tableName][tableName+"."+identifiers[0]])
+	mylist=[]
+	for i in range(0,length):
+		temp=[]
+		for key in identifiers:
+			temp.append(tableData[tableName][tableName+"."+key][i])
+		if temp not in mylist:
+			mylist.append(temp)
+	printRows([ tableName+"."+ident for ident in identifiers],mylist)
+
 def executeQuery():
-	print("tables",tables,"\nidentifiers= ",identifiers,"\nwhereClause= ",whereClause,"\ndistinct= ",distinct,"\naggregate= ",aggregate)
-	print(tableDict)
+	global identifiers
+	# print("tables",tables,"\nidentifiers= ",identifiers,"\nwhereClause= ",whereClause,"\ndistinct= ",distinct,"\naggregate= ",aggregate)
+	# print(tableDict)
 	for table in tables:
 		if table not in tableDict.keys():
 			return printError("Error: %s table doesn't exist "%(table))
 	dataDict={}
 	################################### single table######################
 	if len(tables)==1:
-
+		if whereClause:
+			handleWhere()
 		tableName=tables[0]
-		keys=tableData[tableName].keys()
+
+		finalTable=tableData[tableName]
+		
+		keys=finalTable.keys()
 		if len(identifiers)==1 and identifiers[0]=="*":
-			printOutput(tableData[tableName])
+			if distinct:
+				identifiers=[str(key)[str(key).find(".")+1:] for key in keys]
+				showDistinct(tableName)
+			else:
+				printOutput(finalTable)
 		else:
 			if aggregate:
 				#aggregate present
 				aggFunt,aggAttr=getAggregateData(aggregate)
-				if aggAttr not in keys:
+				if tableName+"."+aggAttr not in keys:
 					return printError("Invalid attribute "+aggAttr)
 				if(aggFunt=="AVERAGE"):
-					val=sum(tableData[tableName][aggAttr])/len(tableData[tableName][aggAttr])
+					val=sum(finalTable[tableName+"."+aggAttr])/len(finalTable[tableName+"."+aggAttr])
 					dataDict[aggregate]=[val]
 					printOutput(dataDict)
 				else:
 					funct=aggregateFunctions[aggFunt]
-					val=funct(tableData[tableName][aggAttr])
+					val=funct(finalTable[tableName+"."+aggAttr])
 					dataDict[aggregate]=[val]
 					printOutput(dataDict)
 			else:
 				if distinct:
 					for attr in identifiers:
-						if attr not in keys:
+						if tableName+"."+attr not in keys:
 							return printError("Invalid attribute "+attr)
 					
-					length=len(tableData[tableName][identifiers[0]])
-					mylist=[]
-					for i in range(0,length):
-						temp=[]
-						for key in identifiers:
-							temp.append(tableData[tableName][key][i])
-						if temp not in mylist:
-							mylist.append(temp)
-					printRows([ table+"."+ident for ident in identifiers],mylist)
+					showDistinct(tableName)
 
 				else:
 					for attr in identifiers:
-						if attr not in keys:
+						if tableName+"."+attr not in keys:
 							return printError("Invalid attribute "+attr)
 						else:
-							dataDict[tables[0]+"."+attr]=tableData[tableName][attr]
+							dataDict[tables[0]+"."+attr]=finalTable[tableName+"."+attr]
 					printOutput(dataDict)
 	################################### single table######################
 
 	################################### multiple table ######################
 	else:
+		mergedTable=crossProduct()
+		printOutput(mergedTable)
 		# tableName=tables[0]
 		# keys=tableData.keys()
-		dataDict={}
-		if len(identifiers)==1 and identifiers[0]=="*":
-			for tableName in tables:
-				for attr in tableData[tableName].keys():
-					dataDict[tableName+"."+attr]=tableData[tableName][attr]
-			printOutput(dataDict)
-		else:
-			if aggregate:
-				#aggregate present
-				aggFunt,aggAttr=getAggregateData(aggregate)
-				if aggAttr not in keys:
-					return printError("Invalid attribute "+aggAttr)
-				if(aggFunt=="AVERAGE"):
-					val=sum(tableData[tableName][aggAttr])/len(tableData[tableName][aggAttr])
-					dataDict[aggregate]=[val]
-					printOutput(dataDict)
-				else:
-					funct=aggregateFunctions[aggFunt]
-					val=funct(tableData[tableName][aggAttr])
-					dataDict[aggregate]=[val]
-					printOutput(dataDict)
-			else:
-				if distinct:
-					for attr in identifiers:
-						if attr not in keys:
-							return printError("Invalid attribute "+attr)
+		# dataDict={}
+		# if len(identifiers)==1 and identifiers[0]=="*":
+		# 	for tableName in tables:
+		# 		for attr in tableData[tableName].keys():
+		# 			dataDict[tableName+"."+attr]=tableData[tableName][attr]
+		# 	printOutput(dataDict)
+		# else:
+		# 	if aggregate:
+		# 		#aggregate present
+		# 		aggFunt,aggAttr=getAggregateData(aggregate)
+		# 		if aggAttr not in keys:
+		# 			return printError("Invalid attribute "+aggAttr)
+		# 		if(aggFunt=="AVERAGE"):
+		# 			val=sum(tableData[tableName][aggAttr])/len(tableData[tableName][aggAttr])
+		# 			dataDict[aggregate]=[val]
+		# 			printOutput(dataDict)
+		# 		else:
+		# 			funct=aggregateFunctions[aggFunt]
+		# 			val=funct(tableData[tableName][aggAttr])
+		# 			dataDict[aggregate]=[val]
+		# 			printOutput(dataDict)
+		# 	else:
+		# 		if distinct:
+		# 			for attr in identifiers:
+		# 				if attr not in keys:
+		# 					return printError("Invalid attribute "+attr)
 					
-					length=len(tableData[tableName][identifiers[0]])
-					mylist=[]
-					for i in range(0,length):
-						temp=[]
-						for key in identifiers:
-							temp.append(tableData[tableName][key][i])
-						if temp not in mylist:
-							mylist.append(temp)
-					printRows([ table+"."+ident for ident in identifiers],mylist)
+		# 			length=len(tableData[tableName][identifiers[0]])
+		# 			mylist=[]
+		# 			for i in range(0,length):
+		# 				temp=[]
+		# 				for key in identifiers:
+		# 					temp.append(tableData[tableName][key][i])
+		# 				if temp not in mylist:
+		# 					mylist.append(temp)
+		# 			printRows([ table+"."+ident for ident in identifiers],mylist)
 
-				else:
-					for attr in identifiers:
-						if attr not in keys:
-							return printError("Invalid attribute "+attr)
-						else:
-							dataDict[tables[0]+"."+attr]=tableData[tableName][attr]
-					printOutput(dataDict)
+		# 		else:
+		# 			for attr in identifiers:
+		# 				if attr not in keys:
+		# 					return printError("Invalid attribute "+attr)
+		# 				else:
+		# 					dataDict[tables[0]+"."+attr]=tableData[tableName][attr]
+		# 			printOutput(dataDict)
 
 
 
@@ -162,17 +237,8 @@ def printRows(attrs,listRows):
 
 def printOutput(dataDict):
 	print("=================================================================")
-	pprint.pprint(dataDict)
+	# pprint.pprint(dataDict)
 	keys=list(dataDict.keys())
-	
-	# data=[]
-	# for key in keys:
-	# 	data.append(dataDict[key])
-	# # print(data)
-	# lis = []
-	# for lis in zip(i for i in data):
-	# 	print(lis[0])
-	# 	# print(temp[0][0])
 
 	for key in keys:
 		print("%15s  |"%(key),end=" ")
@@ -190,6 +256,7 @@ def printOutput(dataDict):
 
 def validateQuery(tokens,tableDict):
 	# pprint.pprint(tokens)
+	# print(parser.sql.Comparison(tokens))
 	global tables
 	global whereClause
 	global identifiers
@@ -283,8 +350,8 @@ def readMetaData():
 			tableDict[tableName]=[]
 			table=False
 		else:
-			# col=tableName.upper()+"."+line.strip().upper()
-			col=line.strip().upper()
+			col=tableName.upper()+"."+line.strip().upper()
+			# col=line.strip().upper()
 			tableDict[tableName].append(col)
 		line = fp.readline()
 
