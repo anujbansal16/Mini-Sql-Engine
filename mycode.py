@@ -280,6 +280,8 @@ def filterDataOnClause(finalTable,clause1,clause2,logic):
 				if operators[operatorA](finalTable[firstA][i],finalTable[secondA][i]):
 					for key in keys:
 						resultantTable[key].append(finalTable[key][i])
+			if operatorA=="=":
+				del resultantTable[secondA]
 		elif isFirstAAttr:
 			for i in range(0,length):
 				if operators[operatorA](finalTable[firstA][i],secondA):
