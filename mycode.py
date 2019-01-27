@@ -103,15 +103,26 @@ def crossProduct():
 	
 
 def showDistinct(tableName):
-	length=len(tableData[tableName][tableName+"."+identifiers[0]])
+	length=len(tableData[tableName][getAttr(tableName,identifiers[0])])
 	mylist=[]
 	for i in range(0,length):
 		temp=[]
 		for key in identifiers:
-			temp.append(tableData[tableName][tableName+"."+key][i])
+			attr=getAttr(tableName,key)
+			temp.append(tableData[tableName][attr][i])
 		if temp not in mylist:
 			mylist.append(temp)
-	printRows([ tableName+"."+ident for ident in identifiers],mylist)
+	printRows([ getAttr(tableName,ident) for ident in identifiers],mylist)
+
+def getAttr(tableName,attr):
+	if "." in attr:
+		return attr
+	else:
+		return tableName+"."+attr
+
+def executeQueryOneTable():
+	return 1
+
 
 def executeQuery():
 	global identifiers
@@ -123,16 +134,16 @@ def executeQuery():
 	dataDict={}
 	################################### single table######################
 	if len(tables)==1:
-		if whereClause:
-			handleWhere()
+		# if whereClause:
+			# handleWhere()
 		tableName=tables[0]
 
 		finalTable=tableData[tableName]
-		
+
 		keys=finalTable.keys()
 		if len(identifiers)==1 and identifiers[0]=="*":
 			if distinct:
-				identifiers=[str(key)[str(key).find(".")+1:] for key in keys]
+				identifiers=list(keys)
 				showDistinct(tableName)
 			else:
 				printOutput(finalTable)
@@ -140,38 +151,61 @@ def executeQuery():
 			if aggregate:
 				#aggregate present
 				aggFunt,aggAttr=getAggregateData(aggregate)
-				if tableName+"."+aggAttr not in keys:
+				aggAttr=getAttr(tableName,aggAttr)
+				if aggAttr not in keys:
 					return printError("Invalid attribute "+aggAttr)
 				if(aggFunt=="AVERAGE"):
-					val=sum(finalTable[tableName+"."+aggAttr])/len(finalTable[tableName+"."+aggAttr])
+					val=sum(finalTable[aggAttr])/len(finalTable[aggAttr])
 					dataDict[aggregate]=[val]
 					printOutput(dataDict)
 				else:
+					if aggFunt not in aggregateFunctions.keys():
+						return printError("Error: not a valid aggregate function- "+aggFunt)
 					funct=aggregateFunctions[aggFunt]
-					val=funct(finalTable[tableName+"."+aggAttr])
+					val=funct(finalTable[aggAttr])
 					dataDict[aggregate]=[val]
 					printOutput(dataDict)
 			else:
 				if distinct:
 					for attr in identifiers:
-						if tableName+"."+attr not in keys:
+						if getAttr(tableName,attr) not in keys:
 							return printError("Invalid attribute "+attr)
 					
 					showDistinct(tableName)
 
 				else:
 					for attr in identifiers:
-						if tableName+"."+attr not in keys:
+						attr=getAttr(tableName,attr)
+						if attr not in keys:
 							return printError("Invalid attribute "+attr)
 						else:
-							dataDict[tables[0]+"."+attr]=finalTable[tableName+"."+attr]
+							
+							dataDict[attr]=finalTable[attr]
 					printOutput(dataDict)
 	################################### single table######################
 
 	################################### multiple table ######################
 	else:
 		mergedTable=crossProduct()
-		printOutput(mergedTable)
+		# printOutput(mergedTable)
+		keys=list(mergedTable.keys())
+		# print(keys)
+		# print(identifiers)
+		# print(tables)
+		resolvedIdentifiers=[]
+		for attr in identifiers:
+			temp=set()
+			for tableName in tables:
+				attrtemp=getAttr(tableName,attr)
+				if attrtemp in tableDict[tableName]:
+					temp.add(attrtemp)
+					# print(temp)
+					if len(temp)>1:
+						attrtemp=temp.pop()
+						return printError("Error: ambigeous attribute "+attrtemp[attrtemp.find(".")+1])
+			resolvedIdentifiers=resolvedIdentifiers+list(temp)
+		print(resolvedIdentifiers)
+
 		# tableName=tables[0]
 		# keys=tableData.keys()
 		# dataDict={}
