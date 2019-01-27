@@ -1,4 +1,5 @@
 import sys
+import operator
 import re
 import csv
 import pprint
@@ -19,7 +20,8 @@ distinct=False   # True if distinct is present
 aggregate=None   # MAX(a),MAX(table1.a) etc
 
 # allowed aggregate functions
-aggregateFunctions={"SUM":sum, "AVERAGE":"anuj", "MAX":max,"MIN":min}
+aggregateFunctions={"SUM":sum, "MAX":max,"MIN":min} #average is also allowed
+operators={"<":operator.lt, "<=":operator.le, ">":operator.gt,">=":operator.ge,"=":operator.eq,"AND":operator.and_,"OR":operator.or_}
 
 # data of tables present in database
 # {table1:{table1.a:[values],
@@ -84,7 +86,7 @@ def main():
 		#read command line
 		sqlQueryStmt=parser.parse(sys.argv[1])[0]
 		if validateQuery(sqlQueryStmt.tokens,tableDict):
-			print("Success")
+			# print("Success")
 			executeQuery()
 		else:
 			printError("")
@@ -143,15 +145,25 @@ def executeQuery():
 		if table not in tableDict.keys():
 			return printError("Error: %s table doesn't exist "%(table))
 	
-	################################### single table######################
-	# if whereClause:
-		# handleWhere()
+	
 	finalTable=None
+	
 	if len(tables)==1:
+		#single table
 		tableName=tables[0]
 		finalTable=tableData[tableName]
 	else:
+		#multiple tables
 		finalTable=crossProduct()
+
+
+	################### handle where clause if exist ###################
+	if whereClause:
+		finalTable=handleWhere(finalTable)
+	if finalTable==None:
+		return False;
+
+	###################################################################
 
 	keys=finalTable.keys()  # table keys
 	######################### resolve identifiers ie *, a, table2.a etc ##############
@@ -159,7 +171,7 @@ def executeQuery():
 	if "*" in identifiers:
 		if len(identifiers)==1:
 			resolvedIdentifiers=list(keys)
-			print(resolvedIdentifiers)
+			# print(resolvedIdentifiers)
 		else:
 			return printError("Error:Invalid attributes")
 	else:
@@ -169,12 +181,12 @@ def executeQuery():
 				#no valid attribute/ambiguous attr
 				return False
 			resolvedIdentifiers=resolvedIdentifiers+list(attrSet)
-		print(resolvedIdentifiers)
+		# print(resolvedIdentifiers)
+
 	######################### resolve identifiers ie *, a, table2.a etc ##############
+
 	executeQueryOneTable(finalTable,resolvedIdentifiers)
 
-		
-	################################### single table######################
 
 
 ############## Execute query finally on final joined/single table  #############
@@ -214,13 +226,182 @@ def  getAggregateData(aggregate):
 	index=aggregate.find("(")
 	return (aggregate[:index],aggregate[index+1:len(aggregate)-1])
 
-def handleWhere():
+# check of identifier in where is a number or a attribute
+def checkNumberORAttr(first,second):
+	isFirstAttr=True
+	isSecondAttr=True
+	try:
+		first=int(first)
+		isFirstAttr=False
+	except:
+		first=first
+	try:
+		second=int(second)
+		isSecondAttr=False
+	except:
+		second=second
+	# print(first,second,isFirstAttr,isSecondAttr)
+	if isFirstAttr:
+		first=resolveIdentifier(first)
+		if len(first)==0:
+			return (None,None,None,None)
+		first=first.pop()
+	if isSecondAttr:
+		second=resolveIdentifier(second)
+		if len(second)==0:
+			return (None,None,None,None)
+		second=second.pop()
+	return (first,isFirstAttr,second,isSecondAttr)
+
+# return filter data based on clauses, handles and or also
+def filterDataOnClause(finalTable,clause1,clause2,logic):
+	#check if first and second identifier is a number or attribute
+	firstA,operatorA,secondA=clause1
+	firstA,isFirstAAttr,secondA,isSecondAAttr=checkNumberORAttr(firstA,secondA)
+	if firstA==None:
+		return None
+	#handle and or
+	if logic!=None:
+		firstB,operatorB,secondB=clause2
+		firstB,isFirstBAttr,secondB,isSecondBAttr=checkNumberORAttr(firstB,secondB)
+		if firstB==None:
+			return None
+	
+
+	keys=list(finalTable.keys())
+	resultantTable={ x:[] for x in keys}
+	length=len(finalTable[keys[0]])
+
+	# without and or
+	if logic==None:
+
+		if isFirstAAttr and isSecondAAttr:
+			for i in range(0,length):
+				if operators[operatorA](finalTable[firstA][i],finalTable[secondA][i]):
+					for key in keys:
+						resultantTable[key].append(finalTable[key][i])
+		elif isFirstAAttr:
+			for i in range(0,length):
+				if operators[operatorA](finalTable[firstA][i],secondA):
+					for key in keys:
+						resultantTable[key].append(finalTable[key][i])
+		elif isSecondAAttr:
+			for i in range(0,length):
+				if operators[operatorA](firstA,finalTable[secondA][i]):
+					for key in keys:
+						resultantTable[key].append(finalTable[key][i])
+		else:
+			for i in range(0,length):
+				if operators[operatorA](firstA,secondA):
+					for key in keys:
+						resultantTable[key].append(finalTable[key][i])
+		return resultantTable
+
+	# and ,or, all combinations
+	else:
+		if isFirstAAttr and isSecondAAttr:
+			if isFirstBAttr and isSecondBAttr:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](finalTable[firstA][i],finalTable[secondA][i]),operators[operatorB](finalTable[firstB][i],finalTable[secondB][i])):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			elif isFirstBAttr:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](finalTable[firstA][i],finalTable[secondA][i]),operators[operatorB](finalTable[firstB][i],secondB)):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			elif isSecondBAttr:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](finalTable[firstA][i],finalTable[secondA][i]),operators[operatorB](firstB,finalTable[secondB][i])):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			else:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](finalTable[firstA][i],finalTable[secondA][i]),operators[operatorB](firstB,secondB)):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			return resultantTable
+
+
+		elif isFirstAAttr:
+			if isFirstBAttr and isSecondBAttr:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](finalTable[firstA][i],secondA),operators[operatorB](finalTable[firstB][i],finalTable[secondB][i])):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			elif isFirstBAttr:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](finalTable[firstA][i],secondA),operators[operatorB](finalTable[firstB][i],secondB)):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			elif isSecondBAttr:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](finalTable[firstA][i],secondA),operators[operatorB](firstB,finalTable[secondB][i])):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			else:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](finalTable[firstA][i],secondA),operators[operatorB](firstB,secondB)):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			return resultantTable
+
+
+		elif isSecondAAttr:
+			if isFirstBAttr and isSecondBAttr:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](firstA,finalTable[secondA][i]),operators[operatorB](finalTable[firstB][i],finalTable[secondB][i])):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			elif isFirstBAttr:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](firstA,finalTable[secondA][i]),operators[operatorB](finalTable[firstB][i],secondB)):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			elif isSecondBAttr:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](firstA,finalTable[secondA][i]),operators[operatorB](firstB,finalTable[secondB][i])):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			else:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](firstA,finalTable[secondA][i]),operators[operatorB](firstB,secondB)):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			return resultantTable
+
+
+		else:
+			if isFirstBAttr and isSecondBAttr:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](firstA,secondA),operators[operatorB](finalTable[firstB][i],finalTable[secondB][i])):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			elif isFirstBAttr:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](firstA,secondA),operators[operatorB](finalTable[firstB][i],secondB)):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			elif isSecondBAttr:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](firstA,secondA),operators[operatorB](firstB,finalTable[secondB][i])):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			else:
+				for i in range(0,length):
+					if operators[logic](operators[operatorA](firstA,secondA),operators[operatorB](firstB,secondB)):
+						for key in keys:
+							resultantTable[key].append(finalTable[key][i])
+			return resultantTable
+
+
+# handle where clause (parsing)
+def handleWhere(finalTable):
 	# clause :=  clause and clause
 	# clause :=  clause or clause
 	# clause := name operator value
 	# operator := = | <> | < | <= | > | >=
-
-	print(whereClause)
+	# print(whereClause)
 	a=re.search("WHERE (.*) (AND|OR) (.*)",whereClause)
 	clause1=None
 	clause2=None
@@ -231,25 +412,44 @@ def handleWhere():
 		clause2=a.group(3).strip()
 	else:
 		a=re.search("WHERE (.*)",whereClause)
-		clause1=a.group(1).strip()
+		if a:
+			clause1=a.group(1).strip()
+		else:
+			print("Error in where clause")
+			return None
+
 	# print(clause1,logic,clause2)
-	if clause1==None and clause2==None and logic==None:
-		return printError("Error in where clause")
+	if (clause1==None or len(clause1)==0) and (clause2==None or len(clause2)==0):
+		print("Error in where clause")
+		return None
 	if logic==None:
 		#only one clause
-		a=re.search("(.*)(<|>|>=|<=|=)(.*)",clause1)
-		clause1=(a.group(1),a.group(2),a.group(3))
+		# a=re.search("(.*)(<=|>=|>|<|=)(.*)",clause1)
+		a=re.search("([^=><]*)(=|>=?|<=?)(.*)",clause1)
+		if a:
+			clause1=(a.group(1).strip(),a.group(2).strip(),a.group(3).strip())
+		else:
+			print("Error in where clause "+ clause1)
+			return None
 	else:
 		#and or present
-		a=re.search("(.*)(<|>|>=|<=|=)(.*)",clause1)
-		b=re.search("(.*)(<|>|>=|<=|=)(.*)",clause2)
-		clause1=(a.group(1),a.group(2),a.group(3))
-		clause2=(b.group(1),b.group(2),b.group(3))
+		a=re.search("([^=><]*)(=|>=?|<=?)(.*)",clause1)
+		b=re.search("([^=><]*)(=|>=?|<=?)(.*)",clause2)
+		if a:
+			clause1=(a.group(1).strip(),a.group(2).strip(),a.group(3).strip())
+		else:
+			print("Error in where clause "+clause1)
+			return None
+		if b:
+			clause2=(b.group(1).strip(),b.group(2).strip(),b.group(3).strip())
+		else:
+			printError("Error in where clause "+clause2)
+			return None
 
-	print(clause1)
-	print(logic)
-	print(clause2)
-
+	finalTable=filterDataOnClause(finalTable,clause1,clause2,logic)
+	# return table or None
+	return finalTable
+				
 
 # return cross product of 2 tables
 def product(table1,table2):
@@ -280,15 +480,16 @@ def crossProduct():
 # execute sql with "distinct" keyword
 def showDistinct(finalTable,resolvedIdentifiers):
 	length=len(finalTable[resolvedIdentifiers[0]])
+	mytable={key:[] for key in resolvedIdentifiers}
 	mylist=[]
 	for i in range(0,length):
 		temp=[]
 		for key in resolvedIdentifiers:
-			# attr=getAttr(tableName,key)
 			temp.append(finalTable[key][i])
 		if temp not in mylist:
 			mylist.append(temp)
 	printRows(resolvedIdentifiers,mylist)
+
 
 # associate an attribute given by user to table i.e. table1's col => table1.col
 def getAttr(tableName,attr):
@@ -299,6 +500,7 @@ def getAttr(tableName,attr):
 
 # validates attributes : unknown/ambiguous and associate them with corresponding tables
 def resolveIdentifier(attr):
+
 	temp=set()
 	isExist=False
 	for tableName in tables:
