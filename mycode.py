@@ -5,7 +5,7 @@ import csv
 import pprint
 import numpy as np
 import sqlparse as parser
-from sqlparse.tokens import Keyword, DML,Wildcard,Whitespace
+from sqlparse.tokens import Keyword, DML,Wildcard,Whitespace,Punctuation
 from sqlparse.sql import IdentifierList, Identifier,Where,Function
 
 ################### Global Variables#########################
@@ -89,7 +89,7 @@ def main():
 			# print("Success")
 			executeQuery()
 		else:
-			printError("")
+			return False
 
 	else:
 		print("Provide sql query as argument")
@@ -97,7 +97,7 @@ def main():
 
 ############# Validates sql query and find out tables,attributes,whereClause etc #############
 def validateQuery(tokens,tableDict):
-	# pprint.pprint(tokens)
+	pprint.pprint(tokens)
 	# print(parser.sql.Comparison(tokens))
 	global tables
 	global whereClause
@@ -114,24 +114,34 @@ def validateQuery(tokens,tableDict):
 		return printError("Invalid Query: No columns provided ")
 
 
-	if len(slicedTokens)-1==tablesindex:
-		# print("A")
-		return True
-	elif len(slicedTokens)==tablesindex+2:
+	if len(slicedTokens)==tablesindex+1:
+		return printError("Error: Invalid Query- missing ;")
+	# 1 more token
+	if len(slicedTokens)==tablesindex+2:
 		# print("B")
-		if slicedTokens[tablesindex+1].ttype is Whitespace:
+		if slicedTokens[tablesindex+1].ttype is Punctuation and slicedTokens[tablesindex+1].value==";" :
 			return True
-		return printError("Invalid Query1")	
+		return printError("Error: Invalid Query- missing ;")
+	# 2 more token
 	elif len(slicedTokens)==tablesindex+3:
 		# print("C")
 		if slicedTokens[tablesindex+1].ttype is Whitespace:
-			if isinstance(slicedTokens[tablesindex+2],Where):
-				whereClause=slicedTokens[tablesindex+2].value.upper()
+			if slicedTokens[tablesindex+2].ttype is Punctuation and slicedTokens[tablesindex+2].value==";":
 				return True
-		return printError("Invalid Query: did you mean 'where' ")	
-	else:	
-		# print("D")
-		return printError("Invalid Query")	
+			elif isinstance(slicedTokens[tablesindex+2],Where):
+				whereClause=slicedTokens[tablesindex+2].value.strip().upper()
+				print(whereClause)
+				if whereClause[-1:]==";":
+					whereClause=whereClause[:-1]
+					return True
+		elif slicedTokens[tablesindex+1].ttype is Punctuation and slicedTokens[tablesindex+1].value==";" :
+			if slicedTokens[tablesindex+2].ttype is Whitespace:
+				return True
+		return printError("Error: Invalid Query 'missing ;'")
+	else:
+		if slicedTokens[tablesindex+3].ttype is Whitespace:
+			return True
+		return printError("Error: Invalid Query")	
 
 
 ############# Execute query #############
