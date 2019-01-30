@@ -219,7 +219,7 @@ def executeQueryOneTable(finalTable,resolvedIdentifiers):
 				return printError("Error: not a valid aggregate function- "+aggFunt)
 			funct=aggregateFunctions[aggFunt]
 			val=funct(finalTable[aggAttr])
-			dataDict[aggregate]=[val]
+			dataDict[aggFunt+"("+aggAttr+")"]=[val]
 			printOutput(dataDict)
 	else:
 		if distinct:
@@ -537,12 +537,12 @@ def resolveIdentifier(attr):
 def printRows(attrs,listRows):
 	print("=================================================================")
 	for a in attrs:
-		print("%15s  |"%(a),end=" ")
+		print("%10s|"%(a),end=" ")
 	print()
 	print("=================================================================")
 	for row in listRows:
 		for val in row:
-			print("%15s  |"%(val),end=" ")
+			print("%10s|"%(val),end=" ")
 		print()
 	print("=================================================================")
 
@@ -554,13 +554,13 @@ def printOutput(dataDict):
 	keys=list(dataDict.keys())
 
 	for key in keys:
-		print("%15s  |"%(key),end=" ")
+		print("%10s|"%(key),end=" ")
 	print()
 	print("=================================================================")
 	length=len(dataDict[keys[0]])
 	for i in range(0,length):
 		for key in keys:
-			print("%15s  |"%(dataDict[key][i]),end=" ")
+			print("%10s|"%(dataDict[key][i]),end=" ")
 		print()
 	print("=================================================================")
 
