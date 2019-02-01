@@ -39,7 +39,10 @@ def printError(s):
 ############# Read Tables Metadata from metadata.txt #############
 ############# Prepare tableDict #############
 def readMetaData():
-	fp=open("metadata.txt", "r")
+	try:
+		fp=open("metadata.txt", "r")	
+	except Exception as e:
+		return printError("Error: No metadata.txt file found (Make sure its present in current directory)")
 	line=fp.readline()
 	table=False
 	tableName=None
@@ -57,6 +60,7 @@ def readMetaData():
 			# col=line.strip().upper()
 			tableDict[tableName].append(col)
 		line = fp.readline()
+	return True
 
 ############# Load table data in tableData #############
 def loadTables():
@@ -64,32 +68,35 @@ def loadTables():
 	global tableData
 	# print("=============================")
 	for table in tableDict:
-		with open(table+".csv") as csvFile:
-			# print(table)
-			temp={}
-			for col in tableDict[table]:
-				temp[col]=[]
-			csv_reader = csv.reader(csvFile, delimiter=',')
-			for row in csv_reader:
-				for index,val in enumerate(row):
-					temp[tableDict[table][index]].append(int(val))
-		# print("===========================")
-		tableData[table.upper()]=temp
+		try:
+			with open(table+".csv") as csvFile:
+				# print(table)
+				temp={}
+				for col in tableDict[table]:
+					temp[col]=[]
+				csv_reader = csv.reader(csvFile, delimiter=',')
+				for row in csv_reader:
+					for index,val in enumerate(row):
+						temp[tableDict[table][index]].append(int(val))
+			# print("===========================")
+			tableData[table.upper()]=temp
+		except Exception as e:
+			return printError("Error: No file found for '%s' table specified in metadata.txt (Make sure its present in current directory)"%(table))
 	tableDict={key.upper():tableDict[key] for key in tableDict.keys()}
+	return True
 
 ############# Starting point of execution #############
 def main():
 	if len(sys.argv)>1:
 		#read meta data file
-		readMetaData()
-		loadTables()
-		#read command line
-		sqlQueryStmt=parser.parse(sys.argv[1])[0]
-		if validateQuery(sqlQueryStmt.tokens,tableDict):
-			# print("Success")
-			executeQuery()
-		else:
-			return False
+		if readMetaData():
+			if loadTables():
+				#read command line
+				sqlQueryStmt=parser.parse(sys.argv[1])[0]
+				if validateQuery(sqlQueryStmt.tokens,tableDict):
+					executeQuery()
+				else:
+					return False
 
 	else:
 		print("Provide sql query as argument")
@@ -97,7 +104,7 @@ def main():
 
 ############# Validates sql query and find out tables,attributes,whereClause etc #############
 def validateQuery(tokens,tableDict):
-	pprint.pprint(tokens)
+	# pprint.pprint(tokens)
 	# print(parser.sql.Comparison(tokens))
 	global tables
 	global whereClause
@@ -130,7 +137,7 @@ def validateQuery(tokens,tableDict):
 				return True
 			elif isinstance(slicedTokens[tablesindex+2],Where):
 				whereClause=slicedTokens[tablesindex+2].value.strip().upper()
-				print(whereClause)
+				# print(whereClause)
 				if whereClause[-1:]==";":
 					whereClause=whereClause[:-1]
 					return True
@@ -220,7 +227,7 @@ def executeQueryOneTable(finalTable,resolvedIdentifiers):
 			funct=aggregateFunctions[aggFunt]
 			val=funct(finalTable[aggAttr])
 			dataDict[aggFunt+"("+aggAttr+")"]=[val]
-			printOutput(dataDict)
+			printOutput(dataDict,True)
 	else:
 		if distinct:
 			showDistinct(finalTable,resolvedIdentifiers)
@@ -535,34 +542,81 @@ def resolveIdentifier(attr):
 
 ############# Prints collection of lists parallely #############
 def printRows(attrs,listRows):
-	print("=================================================================")
-	for a in attrs:
-		print("%10s|"%(a),end=" ")
+	for i,a in enumerate(attrs):
+		if i==0:
+			print("%s"%(a),end="")
+			continue
+		print(",%s"%(a),end="")
 	print()
-	print("=================================================================")
 	for row in listRows:
-		for val in row:
-			print("%10s|"%(val),end=" ")
+		for i,val in enumerate(row):
+			if i==0:
+				print("%s"%(val),end="")	
+				continue
+			print(",%s"%(val),end="")
 		print()
-	print("=================================================================")
+	
+	# print("=================================================================")
+	# for a in attrs:
+	# 	print("%10s|"%(a),end=" ")
+	# print()
+	# print("=================================================================")
+	# for row in listRows:
+	# 	for val in row:
+	# 		print("%10s|"%(val),end=" ")
+	# 	print()
+	# print("=================================================================")
 
 
 ############# Prints collection of lists as seperate columns #############
-def printOutput(dataDict):
-	print("=================================================================")
-	# pprint.pprint(dataDict)
-	keys=list(dataDict.keys())
-
-	for key in keys:
-		print("%10s|"%(key),end=" ")
-	print()
-	print("=================================================================")
-	length=len(dataDict[keys[0]])
-	for i in range(0,length):
-		for key in keys:
-			print("%10s|"%(dataDict[key][i]),end=" ")
+def printOutput(dataDict,isAggr=False):
+	if isAggr:
+		keys=list(dataDict.keys())
+		for i,key in enumerate(keys):
+			if i==0:
+				print("%s"%(key),end="")
+				continue
+			print(",%s"%(key),end="")
 		print()
-	print("=================================================================")
+		length=len(dataDict[keys[0]])
+		for i in range(0,length):
+			for index,key in enumerate(keys):
+				if index==0:
+					print("<%s>"%(dataDict[key][i]),end="")
+					continue
+				print(",<%s>"%(dataDict[key][i]),end="")
+			print()
+	else:
+		keys=list(dataDict.keys())
+		for i,key in enumerate(keys):
+			if i==0:
+				print("%s"%(key),end="")
+				continue
+			print(",%s"%(key),end="")
+		print()
+		length=len(dataDict[keys[0]])
+		for i in range(0,length):
+			for index,key in enumerate(keys):
+				if index==0:
+					print("%s"%(dataDict[key][i]),end="")
+					continue
+				print(",%s"%(dataDict[key][i]),end="")
+			print()
+
+	# print("=================================================================")
+	# # pprint.pprint(dataDict)
+	# keys=list(dataDict.keys())
+
+	# for key in keys:
+	# 	print("%10s|"%(key),end=" ")
+	# print()
+	# print("=================================================================")
+	# length=len(dataDict[keys[0]])
+	# for i in range(0,length):
+	# 	for key in keys:
+	# 		print("%10s|"%(dataDict[key][i]),end=" ")
+	# 	print()
+	# print("=================================================================")
 
 ####################################### Printing Methods ends #######################################
 
